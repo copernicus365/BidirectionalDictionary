@@ -10,7 +10,9 @@ namespace ByDirectionalDictionary;
 /// </summary>
 /// <typeparam name="TKey">The type of keys in the map.</typeparam>
 /// <typeparam name="TValue">The type of values in the map.</typeparam>
-public class ByDirectionalDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>
+public class ByDirectionalDictionary<TKey, TValue> :
+	IDictionary<TKey, TValue>,
+	IEnumerable<KeyValuePair<TKey, TValue>>
 	where TKey : notnull
 	where TValue : notnull
 {
@@ -32,6 +34,9 @@ public class ByDirectionalDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TK
 	/// </summary>
 	public ICollection<TValue> Values => _forwardMap.Values;
 
+	/// <summary>Member required for IDictionary, hardcoded FALSE.</summary>
+	public bool IsReadOnly => false;
+
 	/// <summary>
 	/// Gets or sets the value associated with the specified key.
 	/// </summary>
@@ -45,6 +50,20 @@ public class ByDirectionalDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TK
 			 : throw new KeyNotFoundException($"The key '{key}' was not found.");
 		set => Set(key, value);
 	}
+
+	/// <summary>
+	/// Gets the key associated with the specified value.
+	/// </summary>
+	public TKey this[TValue value] {
+		get => GetKey(value);
+	}
+
+	/// <summary>
+	/// Adds a key-value pair to the map. Indirection to <see cref="Add(TKey, TValue)"/>, which see for further docs.
+	/// </summary>
+	/// <param name="item">Key value to add</param>
+	public void Add(KeyValuePair<TKey, TValue> item)
+		=> Add(item.Key, item.Value);
 
 	/// <summary>
 	/// Adds a key-value pair to the map.
@@ -206,6 +225,32 @@ public class ByDirectionalDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TK
 	public bool Remove(TKey key) => RemoveByKey(key);
 
 	/// <summary>
+	/// Removes the mapping with the specified key OR value.
+	/// Member of `IDictionary`, so we call *both*
+	/// <see cref="RemoveByKey(TKey)"/> and <see cref="RemoveByValue(TValue)"/>.
+	/// </summary>
+	/// <param name="item">Key value pair</param>
+	/// <returns>True if either map Remove returned true.</returns>
+	public bool Remove(KeyValuePair<TKey, TValue> item)
+	{
+		bool keyRemoved = RemoveByKey(item.Key);
+		bool valRemoved = RemoveByValue(item.Value);
+		return keyRemoved || valRemoved;
+	}
+
+	/// <summary>
+	/// Determines whether the maps contain the specified key and value.
+	/// This member is needed for `IDictionary` implementation. It checks
+	/// *both* maps key values, but not each map's value for a match. Hard
+	/// decision but that seems the best option, another function can be added
+	/// for full consistency checking purposes.
+	/// </summary>
+	/// <param name="item"></param>
+	/// <returns></returns>
+	public bool Contains(KeyValuePair<TKey, TValue> item)
+		=> ContainsKey(item.Key) && ContainsValue(item.Value);
+
+	/// <summary>
 	/// Determines whether the map contains the specified key.
 	/// </summary>
 	/// <param name="key">The key to locate.</param>
@@ -244,5 +289,16 @@ public class ByDirectionalDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TK
 	IEnumerator IEnumerable.GetEnumerator()
 	{
 		return GetEnumerator();
+	}
+
+
+	/// <summary>
+	/// Copies the elements of the ICollection to the array, starting at the particular array index.
+	/// </summary>
+	/// <param name="array">Array to copy to</param>
+	/// <param name="arrayIndex">The starting index in array to start copying to</param>
+	public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
+	{
+		((ICollection<KeyValuePair<TKey, TValue>>)_forwardMap).CopyTo(array, arrayIndex);
 	}
 }
