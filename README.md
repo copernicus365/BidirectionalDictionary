@@ -22,13 +22,13 @@ This is a fork, with a couple key modifications, of [ashishkarn]()'s great looki
 Install via NuGet Package Manager:
 
 ```bash
-dotnet add package BidirectionalDictionary
+dotnet add package DotNetXtensions.BidirectionalDictionary
 ```
 
 Or via Package Manager Console:
 
 ```powershell
-Install-Package BidirectionalDictionary
+Install-Package DotNetXtensions.BidirectionalDictionary
 ```
 
 ## Quick Start
@@ -37,7 +37,7 @@ Install-Package BidirectionalDictionary
 using DotNetXtensions;
 
 // Create a two-way dictionary
-var userMap = new BidirectionalDictionary<int, string>();
+BidirectionalDictionary<int, string> userMap = [];
 
 // Add mappings
 userMap.Add(101, "Alice");
@@ -135,7 +135,7 @@ foreach (var pair in map)
 
 ### User ID to Username Mapping
 ```csharp
-var userMap = new BidirectionalDictionary<int, string>();
+BidirectionalDictionary<int, string> userMap = [];
 userMap.Add(1001, "john_doe");
 userMap.Add(1002, "jane_smith");
 
@@ -148,7 +148,7 @@ int userId = userMap.GetKey("jane_smith");  // 1002
 
 ### Country Code to Country Name
 ```csharp
-var countryMap = new BidirectionalDictionary<string, string>();
+BidirectionalDictionary<string, string> countryMap = [];
 countryMap.Add("US", "United States");
 countryMap.Add("UK", "United Kingdom");
 countryMap.Add("CA", "Canada");
@@ -162,7 +162,7 @@ string code = countryMap.GetKey("Canada");  // "CA"
 
 ### Coordinate to Entity Mapping (Game Development)
 ```csharp
-var positionMap = new BidirectionalDictionary<Vector3, GameObject>();
+BidirectionalDictionary<Vector3, GameObject> positionMap = [];
 positionMap.Add(new Vector3(0, 0, 0), player);
 positionMap.Add(new Vector3(10, 0, 5), enemy);
 
@@ -196,11 +196,11 @@ Both `TKey` and `TValue` must be non-nullable reference types or value types. Th
 
 ```csharp
 // Valid
-var map1 = new BidirectionalDictionary<int, string>();
-var map2 = new BidirectionalDictionary<Guid, MyClass>();
+BidirectionalDictionary<int, string> map1 = [];
+BidirectionalDictionary<Guid, MyClass> map2 = [];
 
 // Invalid - nullable types not allowed
-// var map3 = new BidirectionalDictionary<int?, string>();
+// BidirectionalDictionary<int?, string> map3 = [];
 ```
 
 ## Requirements
