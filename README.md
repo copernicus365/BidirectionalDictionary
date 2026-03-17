@@ -4,7 +4,7 @@
 
 A high-performance bidirectional dictionary implementation for C# that maintains one-to-one relationships between keys and values, allowing O(1) lookups in both directions.
 
-This is a fork with a couple key modifications of [ashishkarn]()'s great looking [TwoWayDictionary](https://github.com/ashishkarn/TwoWayDictionary). Perhaps some changes I needed can ultimately be PR'd or pulled into that project, but I'm not sure, so for now, this is a separate library. This readme has not been much updated yet... (2026/03)
+This is a fork, with a couple key modifications, of [ashishkarn]()'s great looking [TwoWayDictionary](https://github.com/ashishkarn/TwoWayDictionary). Good job! Perhaps some changes I needed can ultimately be PR'd or pulled into that project, but I'm not sure, so for now, this is a separate library. This readme has not been much updated yet... (2026/03). The key modification: A key thing for this type of dictionary / map, is how the setter works, and the complexity of what exactly to do. Do you enforce and check for data-integrity always? I am not saying that was done in error, but at minimum I want some extra members, unique to this being a bidirectional dictionary, including some members that scan the whole thing for integrity. I regret to rename the namespace, but I for multiple reasons it seemed needed.
 
 ## Features
 
@@ -205,7 +205,7 @@ var map2 = new BidirectionalDictionary<Guid, MyClass>();
 
 ## Requirements
 
-- .NET 6.0 or later
+- .NET 8.0 or later
 - C# 12 or later
 
 ## Contributing
