@@ -16,23 +16,61 @@ public class BidirectionalDictionary<TKey, TValue> :
 	where TKey : notnull
 	where TValue : notnull
 {
-	private readonly Dictionary<TKey, TValue> _forwardMap = [];
-	private readonly Dictionary<TValue, TKey> _reverseMap = [];
+	private readonly Dictionary<TKey, TValue> _fmap;
+	private readonly Dictionary<TValue, TKey> _rmap;
+
+	/// <summary>
+	/// True (default) forces the **setter** to not throw when input value being set already exists,
+	/// and is mapped to *a different key*. *Force* means: Force this condition to silently update,
+	/// no exception if value was set to a different key.
+	/// False means: that should never happen, I want an exception, a value should never have a different key
+	/// (one could manually remove a key / value beforehand, but this shouldn't happen / be updated silently).
+	/// Compared to the Guava's ByMap, `Force` set to true makes the setter act like his `forcePut`, and like his
+	/// `put` when false.
+	/// <para />
+	/// In summary:
+	/// `Force`: "I don't care what key owned that value before — evict it (if already exists) and update it to be owned by THIS new key" 
+	/// `!Force`: "I'm updating this key's mapping, but if this value already existed, it MUST NOT already be set to a
+	/// DIFFERENT KEY, scream if they differ"
+	/// </summary>
+	public bool Force { get; set; } = true;
+
+	/// <summary>Constructor</summary>
+	public BidirectionalDictionary()
+	{
+		_fmap = [];
+		_rmap = [];
+	}
+
+	/// <summary>Constructor accepting key / value comparers.</summary>
+	/// <param name="keyComparer">Key comparer, or null to use default for type</param>
+	/// <param name="valueComparer">Value comparer, or null to use default for type</param>
+	public BidirectionalDictionary(
+		IEqualityComparer<TKey>? keyComparer = null,
+		IEqualityComparer<TValue>? valueComparer = null)
+	{
+		_fmap = new Dictionary<TKey, TValue>(keyComparer);
+		_rmap = new(valueComparer);
+	}
+
+	bool _tvalsEqual(TValue? x, TValue? y) => _rmap.Comparer.Equals(x, y);
+	bool _tkeysEqual(TKey? x, TKey? y) => _fmap.Comparer.Equals(x, y);
 
 	/// <summary>
 	/// Gets the number of key-value pairs in the map.
 	/// </summary>
-	public int Count => _forwardMap.Count;
+	public int Count => _fmap.Count;
 
 	/// <summary>
 	/// Gets a collection containing the keys in the map.
 	/// </summary>
-	public ICollection<TKey> Keys => _forwardMap.Keys;
+	public ICollection<TKey> Keys => _fmap.Keys;
 
 	/// <summary>
 	/// Gets a collection containing the values in the map.
+	/// Takes the values from the forward map.
 	/// </summary>
-	public ICollection<TValue> Values => _forwardMap.Values;
+	public ICollection<TValue> Values => _fmap.Values;
 
 	/// <summary>Member required for IDictionary, hardcoded FALSE.</summary>
 	public bool IsReadOnly => false;
@@ -45,7 +83,7 @@ public class BidirectionalDictionary<TKey, TValue> :
 	/// <exception cref="KeyNotFoundException">The key is not found when getting.</exception>
 	/// <exception cref="ArgumentNullException">The key or value is null when setting.</exception>
 	public TValue this[TKey key] {
-		get => _forwardMap.TryGetValue(key, out var value)
+		get => _fmap.TryGetValue(key, out var value)
 			 ? value
 			 : throw new KeyNotFoundException($"The key '{key}' was not found.");
 		set => Set(key, value);
@@ -77,14 +115,14 @@ public class BidirectionalDictionary<TKey, TValue> :
 		ArgumentNullException.ThrowIfNull(key);
 		ArgumentNullException.ThrowIfNull(value);
 
-		if(_forwardMap.ContainsKey(key))
+		if(_fmap.ContainsKey(key))
 			throw new ArgumentException($"Key '{key}' already exists.", nameof(key));
 
-		if(_reverseMap.ContainsKey(value))
+		if(_rmap.ContainsKey(value))
 			throw new ArgumentException($"Value '{value}' already exists.", nameof(value));
 
-		_forwardMap.Add(key, value);
-		_reverseMap.Add(value, key);
+		_fmap.Add(key, value);
+		_rmap.Add(value, key);
 	}
 
 	/// <summary>
@@ -99,92 +137,54 @@ public class BidirectionalDictionary<TKey, TValue> :
 		ArgumentNullException.ThrowIfNull(key);
 		ArgumentNullException.ThrowIfNull(value);
 
-		if(_forwardMap.ContainsKey(key) || _reverseMap.ContainsKey(value))
+		if(_fmap.ContainsKey(key) || _rmap.ContainsKey(value))
 			return false;
 
-		_forwardMap.Add(key, value);
-		_reverseMap.Add(value, key);
+		_fmap.Add(key, value);
+		_rmap.Add(value, key);
 		return true;
 	}
 
 	/// <summary>
-	/// Sets the value for the specified key, removing any existing mappings if necessary.
+	/// The all important setter method. It will update the mapping for the specified key
+	/// to the new value, and also update the reverse mapping accordingly. Force rules will
+	/// be determined by the current value of the <see cref="Force"/> property, which see for details.
+	/// This method is called by the indexer setter.
 	/// </summary>
-	/// <param name="key">The key to set.</param>
-	/// <param name="value">The value to set.</param>
-	/// <exception cref="ArgumentNullException">The key or value is null.</exception>
+	/// <param name="key">Key</param>
+	/// <param name="value">Value</param>
 	public void Set(TKey key, TValue value)
+		=> Set(key, value, Force);
+
+	/// <summary>
+	/// The all important setter method. It will update the mapping for the specified key
+	/// to the new value, and also update the reverse mapping accordingly.
+	/// </summary>
+	/// <param name="key">Key</param>
+	/// <param name="value">Value</param>
+	/// <param name="force">See notes on the <see cref="Force"/> property.</param>
+	public void Set(TKey key, TValue value, bool force)
 	{
 		ArgumentNullException.ThrowIfNull(key);
 		ArgumentNullException.ThrowIfNull(value);
 
-		// Check if this exact mapping already exists
-		if(_forwardMap.TryGetValue(key, out var existingValue) &&
-			 EqualityComparer<TValue>.Default.Equals(existingValue, value)) {
-			return; // No change needed
+		if(_fmap.TryGetValue(key, out TValue? existingValue)) {
+			if(_tvalsEqual(value, existingValue))
+				return;
+			// the value has changed, remove *existing* value from _rmap
+			_rmap.Remove(existingValue);
 		}
 
-		// Remove existing mappings
-		RemoveByKey(key);
-		RemoveByValue(value);
+		// does the *new* value already exist? AND if so is it's key different??
+		bool valueExistsWithDiffKey = _rmap.TryGetValue(value, out TKey? owningKey) && !_tkeysEqual(owningKey, key);
+		if(valueExistsWithDiffKey) {
+			if(!force)
+				throw new ArgumentException($"Value '{value}' is already mapped to key '{owningKey}'.", nameof(value));
+			_fmap.Remove(owningKey);
+		}
 
-		// Add the new mapping
-		_forwardMap[key] = value;
-		_reverseMap[value] = key;
-	}
-
-	/// <summary>
-	/// Gets the key associated with the specified value.
-	/// </summary>
-	/// <param name="value">The value to look up.</param>
-	/// <returns>The key associated with the value.</returns>
-	/// <exception cref="KeyNotFoundException">The value is not found.</exception>
-	/// <exception cref="ArgumentNullException">The value is null.</exception>
-	public TKey GetKey(TValue value)
-	{
-		ArgumentNullException.ThrowIfNull(value);
-
-		return _reverseMap.TryGetValue(value, out var key)
-			 ? key
-			 : throw new KeyNotFoundException($"The value '{value}' was not found.");
-	}
-
-	/// <summary>
-	/// Gets the value associated with the specified key.
-	/// </summary>
-	/// <param name="key">The key to look up.</param>
-	/// <returns>The value associated with the key.</returns>
-	/// <exception cref="KeyNotFoundException">The key is not found.</exception>
-	/// <exception cref="ArgumentNullException">The key is null.</exception>
-	public TValue GetValue(TKey key)
-	{
-		ArgumentNullException.ThrowIfNull(key);
-
-		return _forwardMap.TryGetValue(key, out var value)
-			 ? value
-			 : throw new KeyNotFoundException($"The key '{key}' was not found.");
-	}
-
-	/// <summary>
-	/// Attempts to get the value associated with the specified key.
-	/// </summary>
-	/// <param name="key">The key to look up.</param>
-	/// <param name="value">When this method returns, contains the value associated with the key, if found.</param>
-	/// <returns>true if the key was found; otherwise, false.</returns>
-	public bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value)
-	{
-		return _forwardMap.TryGetValue(key, out value);
-	}
-
-	/// <summary>
-	/// Attempts to get the key associated with the specified value.
-	/// </summary>
-	/// <param name="value">The value to look up.</param>
-	/// <param name="key">When this method returns, contains the key associated with the value, if found.</param>
-	/// <returns>true if the value was found; otherwise, false.</returns>
-	public bool TryGetKey(TValue value, [MaybeNullWhen(false)] out TKey key)
-	{
-		return _reverseMap.TryGetValue(value, out key);
+		_fmap[key] = value;
+		_rmap[value] = key;
 	}
 
 	/// <summary>
@@ -194,9 +194,9 @@ public class BidirectionalDictionary<TKey, TValue> :
 	/// <returns>true if the key was found and removed; otherwise, false.</returns>
 	public bool RemoveByKey(TKey key)
 	{
-		if(_forwardMap.TryGetValue(key, out var value)) {
-			_forwardMap.Remove(key);
-			_reverseMap.Remove(value);
+		if(_fmap.TryGetValue(key, out var value)) {
+			_fmap.Remove(key);
+			_rmap.Remove(value);
 			return true;
 		}
 		return false;
@@ -209,9 +209,9 @@ public class BidirectionalDictionary<TKey, TValue> :
 	/// <returns>true if the value was found and removed; otherwise, false.</returns>
 	public bool RemoveByValue(TValue value)
 	{
-		if(_reverseMap.TryGetValue(value, out var key)) {
-			_reverseMap.Remove(value);
-			_forwardMap.Remove(key);
+		if(_rmap.TryGetValue(value, out var key)) {
+			_rmap.Remove(value);
+			_fmap.Remove(key);
 			return true;
 		}
 		return false;
@@ -239,6 +239,60 @@ public class BidirectionalDictionary<TKey, TValue> :
 	}
 
 	/// <summary>
+	/// Gets the key associated with the specified value.
+	/// </summary>
+	/// <param name="value">The value to look up.</param>
+	/// <returns>The key associated with the value.</returns>
+	/// <exception cref="KeyNotFoundException">The value is not found.</exception>
+	/// <exception cref="ArgumentNullException">The value is null.</exception>
+	public TKey GetKey(TValue value)
+	{
+		ArgumentNullException.ThrowIfNull(value);
+
+		return _rmap.TryGetValue(value, out var key)
+			 ? key
+			 : throw new KeyNotFoundException($"The value '{value}' was not found.");
+	}
+
+	/// <summary>
+	/// Gets the value associated with the specified key.
+	/// </summary>
+	/// <param name="key">The key to look up.</param>
+	/// <returns>The value associated with the key.</returns>
+	/// <exception cref="KeyNotFoundException">The key is not found.</exception>
+	/// <exception cref="ArgumentNullException">The key is null.</exception>
+	public TValue GetValue(TKey key)
+	{
+		ArgumentNullException.ThrowIfNull(key);
+
+		return _fmap.TryGetValue(key, out TValue? value)
+			 ? value
+			 : throw new KeyNotFoundException($"The key '{key}' was not found.");
+	}
+
+	/// <summary>
+	/// Attempts to get the value associated with the specified key.
+	/// </summary>
+	/// <param name="key">The key to look up.</param>
+	/// <param name="value">When this method returns, contains the value associated with the key, if found.</param>
+	/// <returns>true if the key was found; otherwise, false.</returns>
+	public bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value)
+	{
+		return _fmap.TryGetValue(key, out value);
+	}
+
+	/// <summary>
+	/// Attempts to get the key associated with the specified value.
+	/// </summary>
+	/// <param name="value">The value to look up.</param>
+	/// <param name="key">When this method returns, contains the key associated with the value, if found.</param>
+	/// <returns>true if the value was found; otherwise, false.</returns>
+	public bool TryGetKey(TValue value, [MaybeNullWhen(false)] out TKey key)
+	{
+		return _rmap.TryGetValue(value, out key);
+	}
+
+	/// <summary>
 	/// Determines whether the maps contain the specified key and value.
 	/// This member is needed for `IDictionary` implementation. It checks
 	/// *both* maps key values, but not each map's value for a match. Hard
@@ -255,22 +309,22 @@ public class BidirectionalDictionary<TKey, TValue> :
 	/// </summary>
 	/// <param name="key">The key to locate.</param>
 	/// <returns>true if the map contains the key; otherwise, false.</returns>
-	public bool ContainsKey(TKey key) => _forwardMap.ContainsKey(key);
+	public bool ContainsKey(TKey key) => _fmap.ContainsKey(key);
 
 	/// <summary>
 	/// Determines whether the map contains the specified value.
 	/// </summary>
 	/// <param name="value">The value to locate.</param>
 	/// <returns>true if the map contains the value; otherwise, false.</returns>
-	public bool ContainsValue(TValue value) => _reverseMap.ContainsKey(value);
+	public bool ContainsValue(TValue value) => _rmap.ContainsKey(value);
 
 	/// <summary>
 	/// Removes all mappings from the map.
 	/// </summary>
 	public void Clear()
 	{
-		_forwardMap.Clear();
-		_reverseMap.Clear();
+		_fmap.Clear();
+		_rmap.Clear();
 	}
 
 	/// <summary>
@@ -279,7 +333,7 @@ public class BidirectionalDictionary<TKey, TValue> :
 	/// <returns>An enumerator for the map.</returns>
 	public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
 	{
-		return _forwardMap.GetEnumerator();
+		return _fmap.GetEnumerator();
 	}
 
 	/// <summary>
@@ -299,6 +353,6 @@ public class BidirectionalDictionary<TKey, TValue> :
 	/// <param name="arrayIndex">The starting index in array to start copying to</param>
 	public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
 	{
-		((ICollection<KeyValuePair<TKey, TValue>>)_forwardMap).CopyTo(array, arrayIndex);
+		((ICollection<KeyValuePair<TKey, TValue>>)_fmap).CopyTo(array, arrayIndex);
 	}
 }
