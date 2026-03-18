@@ -2,19 +2,22 @@
 
 [![NuGet](https://img.shields.io/nuget/v/DotNetXtensions.BidirectionalDictionary.svg)](https://www.nuget.org/packages/DotNetXtensions.BidirectionalDictionary)
 
-A high-performance bidirectional dictionary implementation for C# that maintains one-to-one relationships between keys and values, allowing O(1) lookups in both directions.
+A high-performance bidirectional dictionary implementation for C# that maintains one-to-one relationships between keys and values, allowing O(1) lookups in both directions. A carefully thought out implementation, amongst which is a configurable setter behavior via the `Force` property: controls whether setting a `key`'s value silently evicts any conflicting reverse mapping (force mode, the default), or throws when `value` is already owned by a different `key`, aligned with important other BiMap libraries, like Guava's (Java based) `BiMap`.
 
-This is a fork, with a couple key modifications, of [ashishkarn]()'s great looking [TwoWayDictionary](https://github.com/ashishkarn/TwoWayDictionary). Good job! Perhaps some changes I needed can ultimately be PR'd or pulled into that project, but I'm not sure, so for now, this is a separate library. This readme has not been much updated yet... (2026/03). The key modification: A key thing for this type of dictionary / map, is how the setter works, and the complexity of what exactly to do. Do you enforce and check for data-integrity always? I am not saying that was done in error, but at minimum I want some extra members, unique to this being a bidirectional dictionary, including some members that scan the whole thing for integrity. I regret to rename the namespace, but I for multiple reasons it seemed needed.
+## Acknowledgments
+
+This library is a fork of [ashishkarn](https://github.com/ashishkarn)'s excellent [TwoWayDictionary](https://github.com/ashishkarn/TwoWayDictionary) — "a robust, reusable bidirectional mapping solution for the C# community". Key modifications include: configurable setter behavior via `Force`/`Set(key, value, force)`, an optimized `Set` implementation, the reverse indexer `this[TValue]`, custom comparer support, implements `IDictionary<TKey, TValue>` now, etc.
 
 ## Features
 
 - **Bidirectional Lookups**: Retrieve values by keys or keys by values with O(1) time complexity
 - **One-to-One Mapping**: Enforces unique keys and unique values - each key maps to exactly one value and vice versa
 - **Type-Safe**: Generic implementation with compile-time type checking
+- **Configurable Setter Behavior**: The `Force` property controls whether conflicting reverse mappings are silently evicted or cause an exception
 - **Comprehensive API**: Support for Add, Set, Remove, Contains, and Try* variants
 - **IEnumerable Support**: Iterate through key-value pairs with foreach
-- **Well-Tested**: Comprehensive unit test coverage (40+ tests, 100% passing)
-- **Zero Dependencies**: No external dependencies beyond .NET 6.0+
+- **Well-Tested**: Comprehensive unit test coverage (40 tests, 100% passing)
+- **Zero Dependencies**: No external dependencies beyond .NET 8.0+
 - **Multi-Target**: Supports .NET 8.0 and .NET 10.0
 
 ## Installation
@@ -48,7 +51,8 @@ userMap.Add(103, "Charlie");
 string name = userMap[101];  // "Alice"
 
 // Reverse lookup (value -> key)
-int id = userMap.GetKey("Bob");  // 102
+int id = userMap["Bob"];         // 102 (reverse indexer)
+int id2 = userMap.GetKey("Bob"); // 102 (explicit method)
 
 // Check existence
 bool hasUser = userMap.ContainsKey(101);      // true
@@ -71,12 +75,36 @@ map.Add(key, value);
 // TryAdd - returns false if key or value already exists
 bool success = map.TryAdd(key, value);
 
-// Set - replaces existing mappings if necessary
+// Set - updates mapping, behavior on value conflict controlled by Force property
 map.Set(key, value);
 
-// Indexer set - same as Set
+// Set with explicit force override (ignores Force property for this call)
+map.Set(key, value, force: true);   // forcePut: silently evict conflicting mapping
+map.Set(key, value, force: false);  // strict put: throw if value owned by different key
+
+// Indexer set - same as Set (uses Force property)
 map[key] = value;
 ```
+
+### Setter Behavior: the `Force` Property
+
+The `Force` property (default: `true`) controls what happens when you set a key's value and the new value is **already mapped to a different key**:
+
+```csharp
+var map = new BidirectionalDictionary<int, string>();
+map.Add(1, "Alice");
+map.Add(2, "Bob");
+
+// Force = true (default): silently evicts the conflicting mapping (1→"Alice" removed)
+map.Force = true;
+map[2] = "Alice";  // map now contains only: 2→"Alice"
+
+// Force = false: throws ArgumentException instead
+map.Force = false;
+map[2] = "Alice";  // throws: "Value 'Alice' is already mapped to key '1'"
+```
+
+This maps to Guava's `BiMap` terminology: `Force = true` behaves like `forcePut`, `Force = false` behaves like `put`. The `Set(key, value, bool force)` overload lets you override this per-call regardless of the property.
 
 ### Retrieving Elements
 
@@ -86,7 +114,8 @@ TValue value = map[key];
 TValue value = map.GetValue(key);
 
 // Get key by value (throws KeyNotFoundException if not found)
-TKey key = map.GetKey(value);
+TKey key = map[value];         // reverse indexer
+TKey key = map.GetKey(value);  // explicit method
 
 // TryGet* variants - safe versions that don't throw
 bool found = map.TryGetValue(key, out TValue value);
@@ -112,6 +141,19 @@ map.Clear();
 ```csharp
 bool hasKey = map.ContainsKey(key);
 bool hasValue = map.ContainsValue(value);
+```
+
+### Custom Comparers
+
+```csharp
+// Case-insensitive lookups in both directions
+var map = new BidirectionalDictionary<string, string>(
+    keyComparer: StringComparer.OrdinalIgnoreCase,
+    valueComparer: StringComparer.OrdinalIgnoreCase);
+
+map.Add("US", "United States");
+string name = map["us"];             // "United States"
+string code = map["united states"];  // "US"
 ```
 
 ### Collection Properties
@@ -143,7 +185,7 @@ userMap.Add(1002, "jane_smith");
 string username = userMap[1001];  // "john_doe"
 
 // Find ID by username
-int userId = userMap.GetKey("jane_smith");  // 1002
+int userId = userMap["jane_smith"];  // 1002
 ```
 
 ### Country Code to Country Name
@@ -157,7 +199,7 @@ countryMap.Add("CA", "Canada");
 string fullName = countryMap["US"];  // "United States"
 
 // Get code from full name
-string code = countryMap.GetKey("Canada");  // "CA"
+string code = countryMap["Canada"];  // "CA"
 ```
 
 ### Coordinate to Entity Mapping (Game Development)
@@ -170,7 +212,7 @@ positionMap.Add(new Vector3(10, 0, 5), enemy);
 GameObject entity = positionMap[new Vector3(0, 0, 0)];
 
 // Find position of entity
-Vector3 position = positionMap.GetKey(player);
+Vector3 position = positionMap[player];
 ```
 
 ## Performance Characteristics
@@ -205,7 +247,7 @@ BidirectionalDictionary<Guid, MyClass> map2 = [];
 
 ## Requirements
 
-- .NET 8.0 or later
+- .NET 8.0 or later (also targets .NET 10.0)
 - C# 12 or later
 
 ## Contributing
@@ -221,10 +263,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-This library was created to provide a robust, reusable bidirectional mapping solution for the C# community.
 
 ## Support
 
