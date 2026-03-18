@@ -189,23 +189,23 @@ public class BidirectionalDictionary<TKey, TValue> :
 		ArgumentNullException.ThrowIfNull(key);
 		ArgumentNullException.ThrowIfNull(value);
 
-		if(_fmap.TryGetValue(key, out TValue? existingValue)) {
-			if(_tvalsEqual(value, existingValue))
+		if(_fmap.TryGetValue(key, out TValue? currentValue)) {
+			if(_tvalsEqual(value, currentValue))
 				return;
 			// the value has changed, remove *existing* value from _rmap
-			_rmap.Remove(existingValue);
+			_rmap.Remove(currentValue);
 		}
 
 		if(!AllowDefaults)
 			_checkDefaults(key, value);
 
 		// does the *new* value already exist? AND if so is it's key different??
-		bool valueExistsWithDiffKey = _rmap.TryGetValue(value, out TKey? owningKey) && !_tkeysEqual(owningKey, key);
+		bool valueExistsWithDiffKey = _rmap.TryGetValue(value, out TKey? currentKey) && !_tkeysEqual(currentKey, key);
 		if(valueExistsWithDiffKey) {
 			if(!force)
-				throw new ArgumentException($"Value '{value}' is already mapped to key '{owningKey}'.", nameof(value));
-			if(owningKey != null)
-				_fmap.Remove(owningKey);
+				throw new ArgumentException($"Value '{value}' is already mapped to key '{currentKey}'.", nameof(value));
+			if(currentKey != null)
+				_fmap.Remove(currentKey);
 		}
 
 		_fmap[key] = value;
