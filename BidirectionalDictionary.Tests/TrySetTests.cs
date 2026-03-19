@@ -139,10 +139,10 @@ public class TrySetTests
 		Equal(1, diffKey);
 	}
 
-	// --- differentKeyOwns output guarantees ---
+	// --- conflictKey output guarantees ---
 
 	[Fact]
-	public void OnTrue_DifferentKeyOwnsIsAlwaysDefault()
+	public void OnTrue_ConflictKeyIsAlwaysDefault()
 	{
 		// Use string keys so that TKey? is a nullable reference type, letting us verify null
 		BidirectionalDictionary<string, string> map = [];
@@ -162,7 +162,7 @@ public class TrySetTests
 	}
 
 	[Fact]
-	public void OnFalse_DifferentKeyOwnsIsTheConflictingKey()
+	public void OnFalse_ConflictKeyIsTheConflictingKey()
 	{
 		BidirectionalDictionary<int, string> map = [];
 		map.Add(10, "ten");

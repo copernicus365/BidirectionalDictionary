@@ -41,29 +41,62 @@ Install-Package DotNetXtensions.BidirectionalDictionary
 using DotNetXtensions;
 
 // Create a two-way dictionary
-BidirectionalDictionary<int, string> userMap = [];
+BidirectionalDictionary<int, string> map = [];
 
-// Add mappings
-userMap.Add(101, "Alice");
-userMap.Add(102, "Bob");
-userMap.Add(103, "Charlie");
+// Add. Like with normal Dictionary, checks for conflicts. Throws if key OR value already exists
+map.Add(101, "Alice");
+map.Add(102, "Bob");
+
+// Indexer (=Set()). Add is a bit lighter when you know you are adding new entries
+map[103] = "Charlie";
+
+// Indexer call above is an indirection call to, and thus is identical, to:
+map.Set(103, "Charlie", Force)`).
+
+// Set. Can be an addition (new key/value), but also can be an Update
+map.Set(120, "Sophie");
 
 // Forward lookup (key -> value)
-string name = userMap[101];  // "Alice"
+string name = map[101];  // "Alice"
 
 // Reverse lookup (value -> key)
-int id = userMap["Bob"];         // 102 (reverse indexer)
-int id2 = userMap.GetKey("Bob"); // 102 (explicit method)
+int id = map["Bob"];         // 102 (reverse indexer)
+int id2 = map.GetKey("Bob"); // 102 (explicit method)
 
 // Check existence
-bool hasUser = userMap.ContainsKey(101);      // true
-bool hasName = userMap.ContainsValue("Bob");  // true
+bool hasUser = map.ContainsKey(101);      // true
+bool hasName = map.ContainsValue("Bob");  // true
 
 // Remove mappings
-userMap.RemoveByKey(102);
+map.RemoveByKey(102);
 // or
-userMap.RemoveByValue("Charlie");
+map.RemoveByValue("Charlie");
 ```
+
+TrySet with conflict awareness
+
+```csharp
+BidirectionalDictionary<int, string> map = [];
+
+map.Add(110, "Rudolph");
+map[115] = "Zog";
+map.Set(120, "Sophie");
+
+Equal(3, map.Count); // verify 3 items exist
+
+True(map.TrySet(120, "Sophia", out int conflictKey)); // success, conflictKey = 0 (default)
+
+False(map.TrySet(220, "Sophia", out conflictKey));
+// fail! conflictKey = 120 ... key 120 is already paired with value "Sophia"
+// op is as fast as lightning, with zero exception
+
+Equal(3, map.Count); // verify still only 3 items, failed TrySet didn't add
+
+False(map.ContainsValue("Sophie")); // original "Sophie" value is gone
+
+True(map.TryGetKey("Sophia", out int ownerKey) && ownerKey == 120);
+```
+
 
 ## API Documentation
 
@@ -87,8 +120,8 @@ map.Set(key, value, force: false);  // strict put: throw if value owned by diffe
 map[key] = value;
 
 // TrySet - returns false (without throwing, without modifying the dictionary) if value is
-// owned by a different key; on false, differentKeyOwns identifies the conflicting key
-bool set = map.TrySet(key, value, out TKey? differentKeyOwns);
+// owned by a different key; on false, conflictKey identifies the conflicting key
+bool set = map.TrySet(key, value, out TKey? conflictKey);
 ```
 
 ### Setter Behavior: the `Force` Property
@@ -144,7 +177,7 @@ The guard applies to any adds or sets (`Add`, `TryAdd`, and `Set`, indexer sette
 
 This is a very useful feature, because the Set already had to do this check anyways. It allows you to have `!force` functionality (not silent overwrite of a conflict), but to allow the dictionary itself to do the work of checking if there will be a conflict.
 
-The `out TKey? differentKeyOwns` parameter tells you exactly which key already owns the conflicting value:
+The `out TKey? conflictKey` parameter tells you exactly which key already owns the conflicting value:
 
 ```csharp
 var map = new BidirectionalDictionary<int, string>();
@@ -163,8 +196,8 @@ if(!map.TrySet(3, "Bob", out conflictKey))
 ```
 
 Return value semantics:
-- **`true`** — the mapping is now set (either it was just written, or it was already exactly `key → value`). `differentKeyOwns` is always `default`.
-- **`false`** — `value` is already owned by a different key. The dictionary is **unchanged** — no partial modifications, no evictions. `differentKeyOwns` is the key that owns `value`.
+- **`true`** — the mapping is now set (either it was just written, or it was already exactly `key → value`). `conflictKey` is always `default`.
+- **`false`** — `value` is already owned by a different key. The dictionary is **unchanged** — no partial modifications, no evictions. `conflictKey` is the key that owns `value`.
 
 This is the right choice when:
 - You want `Force = false` semantics (no silent evictions) but also don't want an exception — you need to handle the conflict gracefully in normal control flow

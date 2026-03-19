@@ -228,15 +228,15 @@ public class BidirectionalDictionary<TKey, TValue> :
 	/// <para />
 	/// Returns <see langword="true"/> when the mapping was set, OR, when it was already set to the same value (!).
 	/// Returns <see langword="false"/> when <paramref name="value"/> is already owned by a different key,
-	/// in which case <paramref name="differentKeyOwns"/> contains that key and the dictionary is unchanged.
-	/// On <see langword="true"/>, <paramref name="differentKeyOwns"/> is always <see langword="default"/>.
+	/// in which case <paramref name="conflictKey"/> contains that key and the dictionary is unchanged.
+	/// On <see langword="true"/>, <paramref name="conflictKey"/> is always <see langword="default"/>.
 	/// </summary>
 	/// <param name="key">Key</param>
 	/// <param name="value">Value</param>
-	/// <param name="differentKeyOwns">When this method returns <see langword="false"/>, contains the key
+	/// <param name="conflictKey">When this method returns <see langword="false"/>, contains the key
 	/// that currently owns <paramref name="value"/>. Always <see langword="default"/> on <see langword="true"/>.</param>
 	/// <returns><see langword="true"/> if the mapping was set successfully; <see langword="false"/> if a conflict was detected.</returns>
-	public bool TrySet(TKey key, TValue value, out TKey? differentKeyOwns)
+	public bool TrySet(TKey key, TValue value, out TKey? conflictKey)
 	{
 		// unfort we have to duplicate much code with Set, would have been nice to fully share, but best in end
 		// not to. MUST remember however to sync core Set logic where applicable between these two
@@ -246,7 +246,7 @@ public class BidirectionalDictionary<TKey, TValue> :
 		bool keyExists = _fmap.TryGetValue(key, out TValue? currentValue);
 
 		if(keyExists && _tvalsEqual(value, currentValue)) {
-			differentKeyOwns = default;
+			conflictKey = default;
 			return true;
 		}
 
@@ -257,17 +257,15 @@ public class BidirectionalDictionary<TKey, TValue> :
 
 		// does the *new* value already exist? AND if so is its key different?
 		// IMPORTANT: check conflict BEFORE modifying anything, so a false return leaves the dictionary untouched
-		bool valueExistsWithDiffKey = _rmap.TryGetValue(value, out TKey? conflictKey) && !_tkeysEqual(conflictKey, key);
-		if(valueExistsWithDiffKey) {
-			differentKeyOwns = conflictKey;
+		bool valueExistsWithDiffKey = _rmap.TryGetValue(value, out conflictKey) && !_tkeysEqual(conflictKey, key);
+		if(valueExistsWithDiffKey)
 			return false;
-		}
 
 		// all checks passed — now commit
 		if(keyExists)
 			_rmap.Remove(currentValue!);
 
-		differentKeyOwns = default;
+		conflictKey = default;
 		_fmap[key] = value;
 		_rmap[value] = key;
 
