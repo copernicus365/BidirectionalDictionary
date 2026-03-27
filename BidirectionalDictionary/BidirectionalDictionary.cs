@@ -303,7 +303,7 @@ public class BidirectionalDictionary<TKey, TValue> :
 	}
 
 	/// <summary>
-	/// Removes the mapping with the specified key.
+	/// Removes the mapping with the specified key. Indirection call to <see cref="RemoveByKey(TKey)"/>.
 	/// </summary>
 	/// <param name="key">The key to remove.</param>
 	/// <returns>true if the key was found and removed; otherwise, false.</returns>
@@ -433,4 +433,117 @@ public class BidirectionalDictionary<TKey, TValue> :
 	/// <param name="arrayIndex">The starting index in array to start copying to</param>
 	public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)
 		=> ((ICollection<KeyValuePair<TKey, TValue>>)_fmap).CopyTo(array, arrayIndex);
+
+	/// <summary>
+	/// Adds all entries from <paramref name="source"/> using the current <see cref="Force"/> property.
+	/// Equivalent to calling <see cref="AddRange(IEnumerable{KeyValuePair{TKey,TValue}}, bool)"/> with <see cref="Force"/>.
+	/// </summary>
+	public void AddRange(IEnumerable<KeyValuePair<TKey, TValue>> source)
+		=> AddRange(source, Force);
+
+	/// <summary>
+	/// Adds all entries from <paramref name="source"/>.
+	/// When <paramref name="force"/> is <see langword="true"/>, value conflicts silently evict the existing mapping (calls <see cref="Set(TKey, TValue, bool)"/>).
+	/// When <paramref name="force"/> is <see langword="false"/>, any duplicate key or value throws <see cref="ArgumentException"/> (calls <see cref="Add"/>).
+	/// </summary>
+	public void AddRange(IEnumerable<KeyValuePair<TKey, TValue>> source, bool force)
+	{
+		ArgumentNullException.ThrowIfNull(source);
+		foreach(var kvp in source)
+			if(!force)
+				Add(kvp.Key, kvp.Value);
+			else
+				Set(kvp.Key, kvp.Value, true);
+	}
+
+	/// <summary>
+	/// Adds all entries from <paramref name="source"/> using <see cref="TrySet"/> semantics — never throws, never evicts.
+	/// Entries whose value is already owned by a different key are skipped and collected into
+	/// <paramref name="conflicts"/> as <see cref="KVConflict{TKey,TValue}"/> entries,
+	/// or <see langword="null"/> if there were none.
+	/// </summary>
+	public void AddRange(IEnumerable<KeyValuePair<TKey, TValue>> source, out List<KVConflict<TKey, TValue>>? conflicts)
+	{
+		ArgumentNullException.ThrowIfNull(source);
+		conflicts = null;
+		foreach(var kvp in source) {
+			if(!TrySet(kvp.Key, kvp.Value, out TKey? conflictKey)) {
+				conflicts ??= [];
+				conflicts.Add(new KVConflict<TKey, TValue>(kvp.Key, kvp.Value, conflictKey!));
+			}
+		}
+	}
 }
+
+/// <summary>
+/// Extension methods for creating a <see cref="BidirectionalDictionary{TKey, TValue}"/> from existing sequences.
+/// </summary>
+public static class BidirectionalDictionaryX
+{
+	/// <summary>
+	/// Creates a <see cref="BidirectionalDictionary{TKey, TValue}"/> from <paramref name="source"/>.
+	/// By default any duplicate key or value throws (<paramref name="force"/> = <see langword="false"/>).
+	/// Set <paramref name="force"/> to <see langword="true"/> to silently evict conflicting mappings
+	/// (last in wins).
+	/// If you want to skip conflicts but capture them for inspection, use the <c>out conflicts</c> overload.
+	/// <para/>
+	/// Note: <paramref name="force"/> sets the <see cref="BidirectionalDictionary{TKey,TValue}.Force"/> property,
+	/// but if so desired, this can be changed after the fact on the returned dictionary.
+	/// </summary>
+	/// <param name="source">Source key-value pairs.</param>
+	/// <param name="force">When <see langword="true"/>, key value conflicts silently evict the existing mapping.
+	/// When <see langword="false"/> (default), any duplicate key or value throws.</param>
+	/// <param name="allowDefaults">Sets the <see cref="BidirectionalDictionary{TKey,TValue}.AllowDefaults"/> property
+	/// (else that defaults to its normal default).</param>
+	/// <param name="keyComparer">Key comparer, or null to use the default for the type.</param>
+	public static BidirectionalDictionary<TKey, TValue> ToBidirectionalDictionary<TKey, TValue>(
+		this IEnumerable<KeyValuePair<TKey, TValue>> source,
+		bool force = false,
+		bool? allowDefaults = null,
+		IEqualityComparer<TKey>? keyComparer = null)
+		where TKey : notnull
+		where TValue : notnull
+	{
+		BidirectionalDictionary<TKey, TValue> map = new(keyComparer) { Force = force };
+		if(allowDefaults.HasValue)
+			map.AllowDefaults = allowDefaults.Value;
+		map.AddRange(source, force);
+		return map;
+	}
+
+	/// <summary>
+	/// Creates a <see cref="BidirectionalDictionary{TKey, TValue}"/> from <paramref name="source"/>
+	/// using <see cref="BidirectionalDictionary{TKey,TValue}.TrySet"/> semantics — never throws, never evicts.
+	/// Entries whose value is already owned by a different key are skipped and collected into
+	/// <paramref name="conflicts"/> as <see cref="KVConflict{TKey,TValue}"/> entries,
+	/// or <see langword="null"/> if there were none. So for conflicts, first in wins.
+	/// The returned map has <see cref="BidirectionalDictionary{TKey,TValue}.Force"/> set to <see langword="true"/>.
+	/// </summary>
+	/// <param name="source">Source key-value pairs.</param>
+	/// <param name="conflicts">The skipped conflicts, or <see langword="null"/> if none.</param>
+	/// <param name="allowDefaults">Sets the <see cref="BidirectionalDictionary{TKey,TValue}.AllowDefaults"/> property
+	/// (else that defaults to its normal default).</param>
+	/// <param name="keyComparer">Key comparer, or null to use the default for the type.</param>
+	public static BidirectionalDictionary<TKey, TValue> ToBidirectionalDictionary<TKey, TValue>(
+		this IEnumerable<KeyValuePair<TKey, TValue>> source,
+		out List<KVConflict<TKey, TValue>>? conflicts,
+		bool? allowDefaults = null,
+		IEqualityComparer<TKey>? keyComparer = null)
+		where TKey : notnull
+		where TValue : notnull
+	{
+		BidirectionalDictionary<TKey, TValue> map = new(keyComparer) { Force = true };
+		if(allowDefaults.HasValue)
+			map.AllowDefaults = allowDefaults.Value;
+		map.AddRange(source, out conflicts);
+		return map;
+	}
+}
+
+/// <summary>
+/// Represents a value conflict encountered when bulk-loading a <see cref="BidirectionalDictionary{TKey,TValue}"/>.
+/// <c>Value</c> was already owned by <c>ConflictKey</c>, so the entry <c>Key→Value</c> was skipped.
+/// </summary>
+public readonly record struct KVConflict<TKey, TValue>(TKey Key, TValue Value, TKey ConflictKey)
+	where TKey : notnull
+	where TValue : notnull;
