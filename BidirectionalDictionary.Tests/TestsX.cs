@@ -16,4 +16,15 @@ public static class TestsX
 		Equal(expectedCount, map.Count);
 		True(map.CountsAreEqual);
 	}
+
+	public static void HasExactly<TKey, TValue>(BidirectionalDictionary<TKey, TValue> map, params (TKey Key, TValue Value)[] expected)
+		where TKey : notnull
+		where TValue : notnull
+	{
+		IsCount(expected.Length, map);
+		foreach((TKey key, TValue value) in expected) {
+			Equal(value, map[key]);
+			Equal(key, map[value]);
+		}
+	}
 }
